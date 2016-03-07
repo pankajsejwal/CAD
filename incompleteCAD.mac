@@ -1,0 +1,1288 @@
+
+load("C:\\Users\\Pankaj\\Documents\\maxima-5.37.2\\ratpow.lisp")$
+
+load("simplifying");
+
+load(sarag)$
+ 
+ltproctable(poly,lexfun,vars):= block([temp],
+temp:apply(lexfun,[poly,vars]),
+if(not (symbolp(temp) or op(temp)="^")) then temp:first(temp), 
+first(temp/poly2coeflist(temp)))$
+ 
+leadingtermproc(poly,lexfun,vars):= 
+   if(length(vars)>1) then ltproctable(poly,lexfun,vars)
+else ltproctable(poly,lexOrdering,vars)$
+ 
+TestOrder(f,g,lexfun,vars):= block([mf,mg], 
+if(listp(f)) then f:first(f),
+if(listp(g)) then g:first(g),
+mf:leadingtermproc(f,lexfun,vars),
+mg:leadingtermproc(g,lexfun,vars), 
+is(leadingtermproc(mf+mg,lexfun,vars)=mg))$
+ 
+TRDcompare_term(t1,t2,vars):= block([m1,m2,c1,c2], 
+c1:poly2coeflist(t1),
+m1:t1/c1, 
+c2:poly2coeflist(t2),
+m2:t2/c2, 
+if(m1=m2) then (
+    if(c1=c2) then return(0)
+    else if(c1<c2) then return(-1)
+    else return(1)),
+if(TestOrder(m1,m2,grevlexOrdering,vars)) then 
+    return(-1)
+else return(1))$
+ 
+TRDstrictly_less_poly(p1,p2,vars):= block([m1,m2,m,i,t1,t2,temp],
+m1:if(symbolp(p1)) then 1 else length(map(poly2coeflist,args(p1))),
+m2:if(symbolp(p2)) then 1 else length(map(poly2coeflist,args(p2))),
+m:first(sort([m1,m2],"<")), 
+for i:1 thru m do (
+    t1:if(m1=1) then p1 else part(p1,i),
+    t2:if(m2=1) then p2 else part(p2,i), 
+    temp:TRDcompare_term(t1,t2,vars),
+    if(temp = -1) then return(true) 
+    else if(temp = 1) then return(false)),
+if(m = m2) then return(false) else return(true))$
+ 
+:lisp(defun $factors(poly) 
+    (cond (($numberp poly) poly )
+          (($symbolp poly) (cons '(mlist) `(,poly 1)))
+          ((member 'mexpt (car poly)) ($args poly))
+          ((and (member 'irreducible (car poly)) (member 'factored (car poly))) (cons '(mlist)`(,poly 1)))
+    ((member 'factored (car poly)) (cons '(mlist) (mapcar '$factors (cdr poly))))
+          (t (cons '(mlist) `(,poly 1)))          
+    ))
+ 
+load(grobner);
+ 
+mySign(expr):=if(sign(expr)=pos) then 1 else if(sign(expr)=neg or sign(expr)=nz) then -1 else 0$
+ 
+TRDfactors(poly):= block([p:poly,R,result,f1,f2,fn,lp,i,vars,temp,const], 
+result:factors(factor(p)), 
+vars:listofvars(p),
+if(constantp(first(result))) then (const:first(result),result:rest(result)) else const:1,print("rs->",result),
+fn:map(last,result),
+lp:map(first,result),
+lp:map(lambda([s],poly_primitive_part(s,vars)),lp), 
+lp:map(lambda([s],grlexOrdering(s,vars)),lp), 
+lp:map(lambda([w],mySign(first(temp:poly2coeflist(grlexOrdering(x,vars))))*w),lp), 
+f2:makelist([lp[i],fn[i]],i,1,length(lp)), 
+f2:sort(f2,lambda([x,y],TRDstrictly_less_poly(first(x),first(y),vars))),
+[const,f2])$
+ 
+TRDpowerfree(poly):=block([temp],
+temp:factors(factor(poly)), 
+apply("*",map(first,temp)))$
+ 
+TRDpowerfree(8*y^3-49*y^2+124*y-119);
+ 
+realroots_interv(expr):=block([temp],
+temp:realroots(expr),
+map(lambda([s],if(integerp(rhs(s))) then [rhs(s),rhs(s)] 
+    else(float([rhs(s)-10^-4,rhs(s)+10^-4])) ),temp))$
+ 
+realroots_interv(x*(x-1)*(x+1)*(16*x^4-16*x^2+1));
+ 
+TRDindexsort(lst,k):=block([l1:lst,l2:[],i,temp,n:length(lst),m],
+while(n>0) do ( 
+    m:1,
+    temp:first(l1), 
+    for i:1 thru n do ( 
+        if(part(part(l1,i),k) < part(temp,k) or 
+           part(temp,k)= part(part(l1,i),k) and 
+            first(part(l1,i)) < first(temp)) then
+            (temp:part(l1,i),
+                m:i)),
+l2:cons(temp,l2), 
+l1:deleten(l1,m), 
+n:n-1),reverse(l2))$
+ 
+load(ctensor);
+ 
+TRDindexsort([[1/2,3/4],[3/4,1/5],[3/2,3/2],[1,5/4]],2);
+ 
+TRDshorter(pol,t1,t2,var):=block([v,v1,v2,i:0,a:t1,b:t2],
+v:a/2+b/2,
+v1:subst(a,var,pol),
+v2:subst(v,var,pol), 
+while(i<1) do (
+        if(v1=0) then pol:ratsimp(pol/(var-a)),
+        v1:subst(a,var,pol),
+        i:i+1),
+if(v1=0) then return("Error in TRDshorter"),
+if(v2=0) then (a:v,b:v,return([a,b]))
+else if(mySign(v1)*mySign(v2)=-1) then (b:v,return([a,b]))
+       else (a:v,return([a,b])))$
+ 
+TRDshorter((63*y-79)*(4096*y^2-8192*y+3969),3/4,1,y);
+ 
+TRDinterval_sep(poly,var):=block([l,i,f,a,b,c,d,L,v1],
+f:TRDpowerfree(poly),
+l:realroots_interv(f),
+l:TRDindexsort(l,2), 
+if(length(l)<2) then return(l), 
+for i:1 thru length(l)-1 do (
+    a:first(part(l,i)),
+    b:second(part(l,i)),
+    c:first(part(l,i+1)),
+    d:second(part(l,i+1)),
+    if(b=c) then (
+        while(b=c) do (
+            v1:subst(c,var,f),
+            if(v1=0) then f:ratsimp(f/(var-c)),
+   L:TRDshorter(f,c,d,var),
+            c:L[1],
+            d:L[2]),
+        l[i+1]:[c,d])
+    else if(c=d) then (
+        while(b=c) do (
+     v1:subst(a,var,f),
+ if(v1=0) then f:ratsimp(f/(var-a)),
+      L:TRDshorter(f,a,b,var),
+            a:L[1],
+            b:L[2]),
+        l[i]:[a,b])
+    else (
+        while(b=c) do (
+            v1:subst(a,var,f),
+      if(v1=0) then f:ratsimp(f/(var-a)),
+            L:TRDshorter(f,a,b,var),
+            a:L[1],
+            b:L[2],
+     l[i]:[a,b],
+            if(b=c) then (
+                v1:subst(c,var,f),
+                if(v1=0) then f:ratsimp(f/(var-c)),
+                L:TRDshorter(f,c,d,var),
+              c:L[1],
+           d:L[2],
+                l[i+1]:[c,d])))),l)$
+ 
+;TRDinterval_sep(16*x^7-32*x^5+17*x^3-x,x);
+ 
+TRDis_zero_dimensional(rc):= block([height_rc,num_vars],
+height_rc:length(rc),
+num_vars:flatten(map(listofvars,rc)),
+is(height_rc=length(num_vars)))$
+ 
+TRDis_zero_dimensional([[x, 7, 16, 16*x^7-32*x^5+17*x^3-x]]);
+ 
+TRDis_strongly_normalized(rc):= block([init_vars,alg_vars],
+alg_vars:setify(map(lambda([s],first(s)),rc)),
+init_vars:setify(listofvars(map(lambda([s],third(s)),rc))),
+is(intersect(alg_vars,init_vars)={}))$
+ 
+TRDuse_modulo_or_not(p,rc):= block([use_modulo],
+is(TRDis_zero_dimensional(rc) and TRDis_strongly_normalized(rc)))$;
+ 
+TRDuse_modulo_or_not(-16-63*y, [[x, 1, 64, 64*x+63]]);
+ 
+prem(uu,vv,x):=block([r,v,d,dr,dv,l,n,t,p:0,i:0],
+v:expand(vv),dv:hipow(v,x),r:expand(uu),dr:hipow(r,x), 
+if(dv<=dr) then (
+    l:coeff(v,x,dv),
+    if(dv=0) then v:0 else v:subst(0,x^dv,v))
+else l:1,
+d:dr-dv+1, 
+while(r#0 and dv<=dr) do( i:i+1,
+    t:expand(x^(dr-dv)*coeff(r,x,dr)), 
+    if(dr=0) then r:0 else r:subst(0,x^dr,r),
+    r:expand(l*r)-expand(t*v),
+    p:expand(l*p)+expand(t), 
+    dr:hipow(r,x)),
+r:l^(d-i)*r,
+m:l^d,
+q:l^(d-i)*p,
+map(ratsimp,[r,m,q]))$
+ 
+TRDmodulo(in_p,rc):= block([i,p:in_p,lpolys:rc,poly,h,n_rc],
+if(constantp(p)) then return(p),
+for i:1 thru length(lpolys) do ( 
+    if(not constantp(p)) then (
+        poly:part(rc,i), 
+        p:expand(first(prem(p,part(poly,4),first(poly))))   
+  )),p)$
+ 
+TRDmodulo(-16-63*y,[[x, 1, 64, 64*x+63]]);
+ 
+TRDmodulo_constant_init(pp,rc):= block([i,p:pp,lpolys:rc,poly],
+if(constantp(pp) or emptyp(rc)) then return(pp),
+for i:1 thru length(lpolys) do 
+     poly:part(lpolys,i),
+    if(integerp(part(poly,3))) then (
+        p:expand(first(prem(p,part(poly,4),first(poly)))), 
+        p:poly_primitive_part(p,listofvars(p))
+        ),p)$
+ 
+TRDmodulo_constant_init(4*y*x-1,
+    [[y, 3, 4*x, 4*x^3*y+4*x*y^3-x^2-4*x*y-y^2+1], [x, 1, 1, x-2]]);
+ 
+TRDreduce(p,rc):= block(
+if(constantp(p)) then return(p),
+if(TRDuse_modulo_or_not(p,rc)) then return(TRDmodulo(p,rc)),
+return(TRDmodulo_constant_init(p,rc)))$
+ 
+TRDreduce(16384*x*y-4096,[[x, 1, 64, 64*x+63]]);
+ 
+TRDreduce_primpart_sqf(in_p,v,rc):= block([p],
+p:TRDreduce(in_p,rc),
+p:poly_primitive_part(p,listofvars(p)),
+p:sqfr(p,v))$
+ 
+TRDmake_poly(p):=block([poly:[],temp:[]],
+poly:append(poly,listofvars(p)),
+for item in listofvars(p) do
+    temp:append(temp,map(lambda([x],[x,hipow(x,item)]),myargs(p))), 
+temp:first(sort(temp,lambda([a,b],a[2]>b[2]))),
+    poly:append(poly,[temp[2]]), 
+poly:append(poly,[first(poly2coeflist(temp[1]))]),
+poly:append(poly,[p]))$
+ 
+TRDpower_interval(i1,pow):=block([ends],
+ends:sort([first(i1)^pow,last(i1)^pow]),
+if(TRDsign_interval(i1)#0 or oddp(pow)) then ends else [0,second(ends)])$
+
+TRDadd_intervals(i1,i2):=[first(i1)+first(i2),second(i1)+second(i2)]$
+
+TRDmult_intervals(i1,i2):=block([ends],
+ends:[first(i1)*first(i2),second(i1)*second(i2),first(i1)*second(i2),second(i1)*first(i2)],
+ends:sort(ends),
+[first(ends),last(ends)])$
+ 
+TRDeval_intervals(poly,itable):=block([iv,t,k,ar], 
+if(symbolp(poly)) then itable else
+if(constantp(poly)) then [poly,poly] else
+if(op(poly)="^" and mySign(poly)#-1) then (  
+        TRDpower_interval(TRDeval_intervals(first(args(poly)),itable),second(args(poly)))
+        )
+         else
+if(op(poly)="*" or (mySign(poly)=-1 and op(-poly)="^") or op(poly)="/") then ( 
+        if(op(poly)="*") then ar:args(poly) else ar:[-1,-poly],
+        if(op(poly)="/") then ar:args(num(poly)),
+        iv:[1,1],
+        for t in ar do (
+            iv:TRDmult_intervals(iv,TRDeval_intervals(t,itable))),
+        if(denom(poly)>1) then iv*1/denom(poly) else iv) else
+if(op(poly)="+" or op(poly)="-") then ( 
+        iv:[0,0], 
+      for t in args(poly) do ( 
+    iv:TRDadd_intervals(iv,TRDeval_intervals(t,itable))),iv))$
+ 
+TRDeval_intervals(x^4-x^2+1/16,[-31/32, -123/128]);
+ 
+TRDsign_interval(iv):=if(0<first(iv)) then 1 else if(second(iv)<0) then -1 else 0$
+ 
+TRDsign_interval(TRDeval_intervals(x+1,[-1,-1]));
+ 
+TRDmysubs0(f,r):= block([negsumdispflag:false,ff:expand(f),Ltemp,m,u,i,
+        temp:first(listofvars(f))], 
+if(hipow(f,temp)=0 or f=0) then return(f), 
+if(length(ff)=1) then (
+    if(hipow(ff,temp)=0) then return(f)
+    else if(hipow(ff,temp)=1) then return(r)
+    else return([])), 
+if(op(ff)="*") then 
+    return(first(poly2coeflist(first(fir)))*r^(hipow(ff,temp))),
+if(op(ff),"^") then return(r^hipow(ff,temp)),
+Ltemp:args(ff), 
+m:length(Ltemp),
+u:first(flatten(map(poly2coeflist,Ltemp))), 
+for i:2 thru m do ( 
+    u:u*r^(hipow(Ltemp[i-1],temp)-hipow(Ltemp[i],temp))
+        +poly2coeflist(Ltemp[i])), if(listp(u)) then u:first(u),
+if(r=0) then u else u:u*r^lopow(ff,temp))$
+ 
+TRDmysubs0(x+2,-2);
+ 
+degree(poly):= block([temp,lvars], 
+if(numberp(poly)) then 0 else ( 
+if(symbolp(poly)) then 1 else (
+if(op(poly)="^") then temp:[second(args(poly))] else (
+lvars:listofvars(poly),
+temp:map(lambda([p],map(lambda([ar],hipow(p,ar)),lvars)),myargs(poly)), 
+temp:sort(map(lambda([s],apply("+",s)),temp),">")),first(temp))))$
+ 
+lodegree(poly):= block([temp,lvars], 
+if(numberp(poly)) then 0 else ( 
+if(symbolp(poly)) then 1 else (
+if(op(poly)="^") then temp:[second(args(poly))] else (
+lvars:listofvars(poly),
+temp:map(lambda([p],map(lambda([ar],hipow(p,ar)),lvars)),myargs(poly)), 
+temp:sort(map(lambda([s],apply("+",s)),temp),">")),last(temp))))$
+ 
+lcoeff(poly):= block([negsumdispflag:false,temp,ar],
+if(constantp(poly)) then poly else 
+(if(length(poly)>1) then 
+        print(mySign(poly)),if(op(poly)=-1) then ar:[-1,args(poly)] else ar:args(poly),
+temp:flatten(map(poly2coeflist,ar)),first(temp)))$
+ 
+myargs(poly):= block([temp],
+if(not constantp(poly) and not symbolp(poly)) then (
+if(op(poly)="-") then ( temp:args(poly), 
+if(length(temp)=1) then [-1,first(temp)] else
+if(op(temp)="*") then 
+   if(length(temp)=1) then [-1,first(temp)]
+   else if(numberp(first(args(temp)))) then [-(first(args(temp))),last(args(temp))] else
+        if(numberp(last(args(temp)))) then [(first(args(temp))),-last(args(temp))] else        
+        [-1,first(args(temp)),last(args(temp))] else
+    if(op(temp)="^") then [-1,temp]) else args(poly)) else [poly])$
+ 
+myargs(poly):= block([temp,ints,const],
+if(not constantp(poly) and not symbolp(poly)) then (
+        if(op(poly)="+") then return(args(poly)),
+        if(op(poly)="-") then (
+        if(symbolp(first(args(poly)))) then return(flatten([-1,args(poly)])), 
+        temp:apply(args,args(poly)),
+        if(apply(op,args(poly))="^") then return([-1,first(args(poly))]),
+        if(apply(op,args(poly))="*") then (
+        ints:sublist(temp,numberp),
+        if(ints#[]) then const:apply("*",ints)*-1 else const:-1,
+for item in ints do temp:delete(item,temp),
+        return(cons(const,temp)))),
+        if(op(poly)="/" or op(poly)="^" or op(poly)="*") then return(args(poly))   
+    ) else [poly])$
+ 
+myargs(-z);
+ 
+TRDmysubs(f,x,r):= block([n,i,p,r1,r2,rtemp],
+if(degree(f)=0 or f=0) then return(f),
+if(integerp(r)) then return(TRDmysubs0(f,r)),
+r1:num(r),
+r2:denom(r),
+n:hipow(f,x),   
+if(n=0) then return(f) else
+    ( p:coeff(f,x,n), 
+      rtemp:1,
+ for i:n-1 thru 0 step -1 do (
+        rtemp:rtemp*r2,  
+        p:r1*p+coeff(f,x,i)*rtemp),
+      p:p/rtemp),p)$
+ 
+TRDMsmaller(f,L,n,sn):= block([Ltemp:L,ztval,m,u],
+ztval:first(listofvars(f)),
+for i:1 thru n do (
+    m:1/2*first(Ltemp)+1/2*second(Ltemp),
+    u:TRDmysubs(f,ztval,m),
+    if(u=0) then Ltemp:[m,m] else
+    if(mySign(u)=sn) then Ltemp:[first(Ltemp),m] 
+    else Ltemp:[m,second(Ltemp)]),Ltemp)$
+ 
+TRDfBound(f,ztval,VarList,L):= block([g1:0,g2:0,n:hipow(f,ztval),i,temp],
+if(length(VarList)=0) then return([f,f]),
+for i:0 thru n do (
+    temp:TRDmyMsubs(coeff(f,ztval,i),VarList,L), 
+g1:g1+first(temp)*ztval^i,
+    g2:g2+second(temp)*ztval^i),[g1,g2])$
+ 
+TRDfBound(8*x*y^4-36*x*y^3-2*y^3+8*x^3*y^2+52*x*y^2+7*y^2-20*x^3*y-2*x^2*y-24*x*y-6*y+
+    12*x^3+3*x^2,y,[x],[[-63/64,-63/64]]);
+ 
+TRDmultiply1(m,L):= block([],if(m>0) then [first(L)*m,second(L)*m]
+else [second(L)*m,first(L)*m])$
+ 
+TRDNsquare(x):= block([a:first(x),b:second(x)],
+if(a>0) then [a^2,b^2] else
+  if(b<0) then [b^2,a^2] else
+    if(b<abs(a)) then [b*a,a^2] else [a*b,b^2])$
+ 
+TRDNmultiply(x1,x2):= block([a:first(x1),b:second(x1),c:first(x2),d:second(x2)],
+if(a>=0) then (
+    if(c>=0) then [c*a,b*d] else
+        ( if(d<=0) then [b*c,a*d] else
+            [b*c,b*d]  
+        )) else    
+     if(b<=0) then (
+        if(c>=0) then [a*d,b*c] else
+            ( if(d<=0) then [b*d,c*a] else
+                [a*d,c*a]                    
+            )) else (
+    if(c>=0) then [a*d,b*d] else
+        if(d<=0) then [b*c,c*a] else [first(minmax([a*d,b*c])),last(minmax([c*a,b*d]))]
+    ))$
+ 
+minmax(lis):=block([temp],temp:sort(lis,"<="),[first(temp),last(temp)])$
+ 
+TRDNpower(x,n):=block([y,k], 
+if(n=0) then [1,1] else
+    if(n=1) then x else (
+   k:quotient(n,2), 
+    y:TRDNpower(x,k), 
+ if(evenp(n)) then TRDNsquare(y) else
+        TRDNmultiply(TRDNsquare(y),x)))$
+ 
+TRDNmultiply1(m,L):=block([],
+if(m>0) then [L[1]*m,L[2]*m] else [L[2]*m,L[1]*m])$
+ 
+TRDNplus1(m,x2):=[m+x2[1],x2[2]+m]$
+ 
+TRDmyNsubs(f,x):= block([ff:expand(f),Ltemp,m,u,i],
+if(listofvars(f)=[]) then return([f,f]),
+if(length(ff)=1) then (
+    if(degree(ff)=0) then return([f,f]) else
+    if(degree(ff)=1) then return(x) else return([])),
+if(op(ff)="*" or (mySign(ff)=-1 and op(-ff)="^")) then 
+    return(TRDNmultiply1(first(myargs(ff)),TRDNpower(x,degree(ff)))),
+if(op(ff),"^") then return(TRDNpower(x,degree(ff))),
+Ltemp:myargs(ff), 
+m:length(Ltemp),
+u:flatten([first(poly2coeflist(Ltemp[1])),first(poly2coeflist(Ltemp[1]))]), 
+for i:2 thru m do ( 
+    u:first(poly2coeflist(Ltemp[i]))+
+            TRDNmultiply(u,TRDNpower(x,degree(Ltemp[i-1])-degree(Ltemp[i])))), 
+u:TRDNmultiply(u,TRDNpower(x,lodegree(ff))),u)$
+ 
+TRDmyNsubs(12*x^3+3*x^2,[-63/64, -63/64]);
+ 
+TRDmyCoeffs(function,ztval):= block([f:function,x:ztval,n,i,outL,temp],
+if(f=0) then [[0,0]] else (
+    n:hipow(f,x),
+    outL:[],
+    for i:n thru 0 step -1 do (
+        temp:coeff(f,x,i),
+        if(temp#0) then outL:append(outL,[[temp,i]]))),outL)$
+ 
+TRDmyMsubs(function,VarList,L):= block([k,f:function,VL:VarList,L1:L,x,n1,Ltemp,n2,u,tp1],
+if(f=0) then [0,0] else (
+    n1:length(VL), 
+    if(n1=1) then (k:TRDmyNsubs(f,first(L1))) else (
+    Ltemp:TRDmyCoeffs(f,VL[1]), 
+    x:L1[1],
+    L1:rest(L1),
+    n2:length(Ltemp),
+    u:TRDmyMsubs(Ltemp[1][1],VL,L1),
+    for i:2 thru n2 do (
+    tp1:TRDmyMsubs(Ltemp[2][1],Vl,L1),
+        u:TRDNmultiply(u,TRDNpower(x,Ltemp[1][2]-Ltemp[2][2]))+tp1,
+        Ltemp:rest(Ltemp)),
+    u:TRDNmultiply(u,TRDNpower(x,Ltemp[1][2])))))$
+ 
+TRDmyMsubs(12*x^3+3*x^2,[x],[[-63/64,-63/64]]);
+ 
+TRDfBound(f,ztval,VarList,L):= block([g1,g2,n,i,temp],
+if(length(VarList)=0) then [f,f] else (
+    g1:0,
+    g2:0,
+    n:hipow(f,ztval),
+    for i:0 thru n do ( 
+        temp:TRDmyMsubs(coeff(f,ztval,i),VarList,L), 
+        g1:g1+first(temp)*ztval^i,
+        g2:g2+second(temp)*ztval^i),[g1,g2]))$
+ 
+TRDfBound(8*x^3*y^2+8*x*y^4-4*x^3*y-4*x*y^3-2*x^2*y-8*x*y^2-2*y^3+x^2+4*x*y+y^2+2*y-1,
+y,
+[x],
+[[-2, -2]]);
+ 
+TRDfBound(8*x^3*y^2+8*x*y^4-4*x^3*y-4*x*y^3-2*x^2*y-8*x*y^2-2*y^3+x^2+4*x*y+y^2+2*y-1,
+y,
+[x],
+[[-63/64, -63/64]]);
+ 
+TRDSS(Equations,VarList,L,n):= block([outL:[],outVarL:[],k:length(Equations),
+Ltemp:first(L),sn,ftemp:first(Equations),r1,r2,ztval],
+ztval:first(listofvars(ftemp)),
+sn:mySign(TRDmysubs(ftemp,ztval,second(Ltemp))),
+Ltemp:TRDMsmaller(ftemp,Ltemp,n,sn), 
+outL:[append(outL,Ltemp)],
+outVarL:append(outVarL,[first(VarList)]), 
+Equations:rest(Equations),
+VarList:rest(VarList),
+L:rest(L),
+for i:2 thru k do ( 
+    ftemp:first(Equations),
+    Ltemp:TRDfBound(ftemp,first(VarList),outVarL,outL),
+    sn:mySign(TRDmysubs(first(Ltemp),first(VarList),second(L[1]))),
+    r1:TRDMsmaller(first(Ltemp),first(L),2*n,sn),
+    sn:mySign(TRDmysubs(second(Ltemp),first(VarList),second([L[1]]))),
+    r2:TRDMsmaller(second(Ltemp),first(L),2*n,sn),
+    outL:[append(outL),[[first(minmax([r1[2],r2[2]])),seond(minmax([r1[2],r2[2]]))]]],
+    outVarL:[append(outVarl),[first(VarList)]],
+    Equations:rest(Equations),
+    VarList:rest(VarList),
+    L:rest(L)),outL)$;
+ 
+TRDSS([128*x^10-64*x^9-352*x^8+176*x^7+328*x^6-164*x^5-110*x^4+55*x^3+6*x^2-3*x],
+[x],
+[[33/128, 67/256]],
+4);
+ 
+TRDmultiRefineBox(init_box_with_extra,eps):=block([out:[],listC,box_with_extra,ht,
+        rc,iv,tmp,n,vars,lp,i,width],
+iv:first(init_box_with_extra),
+rc:second(init_box_with_extra), 
+lp:map(lambda([s],s[4]),rc),
+vars:map(first,rc), 
+iv:makelist(iv[i+1],i,length(vars)), 
+tmp:map(reverse,[lp,vars,iv]), 
+width:first(second(minmax([map(lambda([s],s[2]-s[1]),iv)]))), 
+if(width=0) then return(init_box_with_extra),
+n:ceiling(ratsimp(log(factor(width/eps))/log(2))),
+tmp:apply(TRDSS,endcons(n,tmp)),
+for i:1 thru length(vars) do out:endcons(vars[i]=reverse(tmp)[1],out),out)$
+ 
+TRDmultiRefineBox([[x , [33/128, 67/256]], [[x,10,128,128*x^10-64*x^9-352*x^8+176*x^7+328*x^6-164*x^5-110*x^4+
+                55*x^3+6*x^2-3*x]]],1/2048);
+ 
+TRDsign_at_bwe(Bwe,poly):= block([ht,rc,bwe:Bwe,s,eps,out],
+ht:first(bwe),
+rc:second(bwe), 
+s:TRDsign_interval(TRDeval_intervals(poly,second(ht))), 
+if(s#0) then return(s) else (
+    eps:second(minmax(map(lambda([s],s[2]-s[1]),[second(ht)]))), 
+    if(eps=0) then return(0),
+    eps:1/16*eps,
+ bwe:TRDmultiRefineBox([args(ht),rc],eps), 
+    ht:bwe[1],
+    s:TRDsign_interval(TRDeval_intervals(poly,rhs(ht))),
+    if(s#0) then return(s) else return(0)))$
+ 
+TRDsign_at_bwe([[x , [33/128, 67/256]], [[x,10,128,128*x^10-64*x^9-352*x^8+176*x^7+328*x^6-164*x^5-110*x^4+
+                55*x^3+6*x^2-3*x]]],x^4-x^2+1/16);
+ 
+TRDpowerremover(x):=block(if(integerp(x)) then 1 else if(op(x)="^")
+     then first(args(x)) else x)$
+ 
+TRDmaple_polyvariations(poly,var,n):= block([taypoly:poly,count:0,i,nterms,k], 
+if(op(poly)="+") then (
+    /*taypoly:part(trunc(taylor(poly,var,0,n+1)),makelist(i,i,1,n+1)),print("t:",taypoly),*/
+    taypoly:map(lambda([s],if(myargs(s)#[s]) then (k:myargs(s),
+                [first(k),last(myargs(last(k)))]) else [s,0]),myargs(taypoly)),
+    for it:1 thru length(taypoly) do 
+        if(symbolp(last(taypoly[it]))) then taypoly[it]:[first(k),1],
+    taypoly:flatten(taypoly),
+    nterms:1/2*length(taypoly)-1, 
+    for i:1 thru nterms do (
+        if(mySign(part(taypoly,2*i-1))#mySign(part(taypoly,2*i+1))) then
+            (  count:count+1,
+               if(count>1) then return(2))),return(count)) else return(0))$
+ 
+TRDmaple_polyvariations(332292685824*y^4-39000141201408*y^3-58651833270272*y^2-
+    28179849805824*y-4324964958208,y,4);
+ 
+TRDmaple_midpoint(poly,var,n,widthgoal):= block([pl:0,r:1,fl,fr,mid,fm,
+        poly1,intsize:1],
+poly1:horner(poly), 
+fl:subst([var=pl],poly1), 
+if(fl=0) then return([0,0]),
+fr:subst([var=r],poly1), 
+if(fr=0) then return([1,1]),
+while(intsize>widthgoal) do (
+    intsize:1/2*intsize,
+    mid:intsize+pl, 
+    fm:subst([var=mid],poly1), 
+    if(fm=0) then return([pl:mid,r:mid]) else
+    if(mySign(fm)*mySign(fl)>0) then (fl:fm,pl:mid) else
+        (fr:fm,r:mid)),[[pl,r]])$
+ 
+TRDmaple_midpoint(4096*y^2-1024*y-512,y,3,1/4);
+ 
+TRDmaple_zero_one(A,x,n,widthgoal):=block([Astar,var,L,Aprime,Lprime,tmp,
+        Aprime2,Lprime2,y], 
+Astar:expand(subst([y=x+1],expand(y^n*subst([x=1/y],A)))),
+var:TRDmaple_polyvariations(Astar,x,n), 
+if(var=0) then return([]) else
+    if(var=1) then ( 
+    if(1<=widthgoal) then return([[0,1]]) 
+        else (tmp:TRDmaple_midpoint(A,x,n,widthgoal),return(tmp))),
+Aprime:subst([x=1/2*x],A),
+if(subst([x=1],Aprime)=0) then (
+    L:[[1/2,1/2]],
+    Aprime:first(divide(A,2*x-1)), 
+    Aprime:subst([x=1/2*x],Aprime)) else L:[],
+Aprime:expand(2^n*Aprime),
+Lprime:TRDmaple_zero_one(Aprime,x,n,2*widthgoal), 
+L:append(L,map(lambda([x],1/2*x),Lprime)), 
+Aprime2:expand(subst([x=x+1],Aprime)),
+Lprime2:TRDmaple_zero_one(Aprime2,x,n,2*widthgoal),
+L:append(L,map(lambda([x],1/2*x+1/2),Lprime2)))$
+ 
+TRDmaple_zero_one(4535485464576*y^4-2046551916544*y^3+336356116480*y^2-23721422240*y+599455157, y, 4, 1/128);
+ 
+TRDmaple_midpoint(4535485464576*y^4-29205777612800*y^3+60342346448896*y^2-40329311944704*y+332292685824,
+y,4,1/4);
+ 
+TRDmaple_polyvariations(332292685824*y^4-39000141201408*y^3-58651833270272*y^2-28179849805824*y-4324964958208,
+y,4);
+ 
+TRDmaple_uspensky1(A,x,n,k,widthgoal):= block([B,Lprime,L],
+if(k>=0) then B:subst([x=2^k*x],A)
+else B:2^(-k*n)*subst([x=2^k*x,A]),
+Lprime:TRDmaple_zero_one(B,x,n,widthgoal/2^k),
+L:map(lambda([t],[t[1]*2^k,t[2]*2^k]),Lprime))$
+ 
+TRDmaple_uspensky1(4325376*y^4-62455808*y^3+328472770*y^2-741294445*y+599455157,
+y,4,5,1/4);
+ 
+TRDmaple_uspensky1(-2147483648*y^3+7516192768*y^2-8924099278*y+2264089653,y,3,3,1/8);
+ 
+rootbound(f,x):=block([r:1,d,c,p,i:0,j,s,rr],
+p:expand(f),
+d:degree(p),
+if(d=0 or p=0) then return(1),
+c:coeff(p,x,d), 
+p:map(abs,taylor(p-c*x^d,x,0,d+1)),
+c:abs(c),
+while(c*r^d<=subst([x=r],p)) do (
+    r:2*r,
+    i:i+1),
+s:r,
+i:first(minmax([i,3])), 
+for j:1 thru i do (
+ s:1/2*s,
+    rr:r-s,
+    if(subst([x=rr],p)<c*rr^d) then r:rr),r)$
+ 
+rootbound(z-1,z);
+ 
+TRDztuspensky2(A,x,widthgoal):=block([n,k:1,B,L,Aprime,Lprime1,widthgoal1],
+n:degree(A),
+B:rootbound(A,x), 
+while(B>2) do (B:quotient(B+1,2),k:k+1), 
+if(coeff(A,x,0)=0) then (
+    L:[],
+    Aprime:expand(A/x)) else (
+ Aprime:A,
+    L:[]),
+if(widthgoal=nil) then widthgoal1:2^k else
+    widthgoal1:widthgoal,
+Lprime1:TRDmaple_uspensky1(Aprime,x,n,k,widthgoal1),
+append(L,Lprime1))$
+ 
+TRDztuspensky2(4325376*y^4-62455808*y^3+328472770*y^2-741294445*y+599455157,
+y,
+1/4);
+ 
+TRDrealroot1(poly,widthgoal):= block([x,L,poly1,widthgoal1],
+if(numberp(poly)) then if(poly#0) then return([]) else return([]),
+x:first(listofvars(poly)),
+if(widthgoal=nil) then widthgoal1:nil else
+    if(numberp(widthgoal) and widthgoal>0) then widthgoal1:widthgoal,
+poly1:sqfr(poly),
+if(op(poly1)="*") then poly1:expand(map(TRDpowerremover,args(poly1))) else
+    if(op(poly1)="^") then poly1:first(poly1),
+L:TRDztuspensky2(expand(poly1),x,widthgoal1))$
+ 
+TRDrealroot1((65536*y^2-393216*y+525377)*(2*y-7)*(33*y-163),
+1/4);
+ 
+TRDrealroot1(516096*y^4-2191360*y^3+3395966*y^2-2278299*y+577536,1/4);
+ 
+TRDinterval_sep1(poly,var,widthgoal):=block([l,i,f,a,b,c,d,L,v1],
+f:TRDpowerfree(poly),
+l:TRDrealroot1(f,widthgoal),
+l:TRDindexsort(l,2),
+if(length(l)<2) then return(l),
+for i:1 thru length(l)-1 do (
+    a:first(part(l,i)),
+    b:second(part(l,i)),
+    c:first(part(l,i+1)),
+    d:second(part(l,i+1)),
+    if(b=c) then (
+        if(a=b) then (
+            while(b=c) do (
+                v1:subst([var=c],f),
+                if(v1=0) then f:ratsimp(f/(var-c)),
+                L:TRDshorter(f,c,d,vaar),
+                c:L[1],
+                d:L[2]),
+            l[i+1]:[c,d]) else
+        if(c=d) then (
+            while(b=c) do (
+                v1:subst([var=a],f),
+                if(v1=0) then f:ratsimp(f/(var-a)),
+                L:TRDshorter(f,a,b,var),
+                a:L[1],
+                b:L[2]),
+            l[i]:[a,b]) else
+        while(b=c) do (
+            v1:subst([var=a],f),
+            if(v1=0) then f:ratsimp(f/(var-a)),
+         L:TRDshorter(f,a,b,var),
+            a:L[1],
+      b:L[2],
+   l[i]:[a,b],
+            if(b=c) then ( 
+                v1:subst([var=c],f),
+                if(v1=0) then f:ratsimp(f/(var-c)),
+                L:TRDshorter(f,c,d,var),
+                c:L[1],
+                d:L[2],
+                l[i+1]:[c,d])))),l)$
+ 
+TRDinterval_sep1(-516096*y^4+2191360*y^3-3395966*y^2+2278299*y-577536,y,1/4);
+ 
+TRDNintersection(x1,x2):= block([a:x1[1],b:x1[2],c:x2[1],d:x2[2]],
+if(b<c) then [] else (
+    if(a<c) then (
+        if(b<d) then [c,b] else [c,d]) else (
+        if(d<a) then [] else (
+            if(d<b) then [a,d] else [a,b]))))$
+ 
+TRDNintersection([5/2, 321/128],[33/32, 133/128]);
+ 
+TRDmyfixinterval(a1,a2,fa,fb):= block([f1:fa,f2:fb,l1:a1,l2:a2,x,sn],
+x:listofvars(fa)[1],
+if(TRDmysubs(f1,x,a1[1])=0) then f1:ratsimp(f1/(x-a1[1])),
+if(TRDmysubs(f1,x,a1[2])=0) then f1:ratsimp(f1/(x-a1[2])),
+if(TRDmysubs(f2,x,a2[1])=0) then f2:ratsimp(f2/(x-a2[1])),
+if(TRDmysubs(f2,x,a2[2])=0) then f2:ratsimp(f2/(x-a2[2])),
+while(TRDNintersection(l1,l2)#[]) do (
+    if((l2[2]-l2[1])<=(l1[2]-l1[1])) then (
+        sn:mySign(TRDmysubs(f1,x,l1[2])),
+        l1:TRDMsmaller(f1,l1,2,sn)) else (
+        sn:mySign(TRDmysubs(f2,x,l2[2])),
+        l2:TRDMsmaller(f2,l2,2,sn))),[l1,l2])$
+ 
+TRDboundcondition(x1,x2):= block([x,l1,l2],
+l1:[x1[1],x1[2]],
+l2:[x2[1],x2[2]],
+x:TRDNintersection(l1,l2),
+if(x=[]) then return(1),
+if(x[1]=x[2]) then (
+    if(l1[1]=l1[2]) then (
+      if(l1[1]=l2[1] or l1[1]=l2[2]) then return(1)) else
+    if(l2[1]=l2[2]) then 
+      if(l2[1]=l1[2] or l2[1]=l1[2]) then return(1) else 
+        return(1)), 0)$
+ 
+TRDboundcondition([191/128, 3/2],
+[5/4, 161/128]);
+ 
+TRDmyunionRoot(Roota,Rootb,fa,fb):= block([n1,n2,i,j,temp,Root1,Root2],
+if(fa=fb) then return([Roota,Rootb]),
+Root1:Roota,
+Root2:Rootb,
+n1:length(Root1),
+n2:length(Root2),
+if(n1=0) then return(Root2),
+for i:1 thru n1-1 do (
+    if(TRDboundcondition(Root1[i],Root2[i+1])=0) then (
+        temp:TRDmyfixinterval(Root1[i],Root2[i+1],fa,fb),
+        Root1:substinpart(Root1,i,temp[1]),
+        Root2:substinpart(Root2,i+1,temp[2]))),
+
+for j:1 thru n2-1 do (
+    if(TRDboundcondition(Root1[j+1],Root2[j])) then (
+        temp:TRDmyfixinterval(Root1[j+1],Root2[j],fa,fb),
+        Root1:substinpart(Root1,j+1,temp[1]),
+        Root2:substinpart(Root2,j,temp[2]))),[Root1,Root2])$
+ 
+TRDmyunionRoot([[47/64, 95/128], [161/128, 81/64], [191/128, 3/2]],
+[[95/128, 3/4], [5/4, 161/128], [3/2, 193/128]],
+55426998840124352185791826149/19807040628566084398385987584-311622100543072400434713449919/39614081257132168796771975168*y+7*y^2-2*y^3,
+221812839000838162962244796733/79228162514264337593543950336-77896788165739703923755238135/9903520314283042199192993792*y+7*y^2-2*y^3
+);
+ 
+TRDmsum_width(L):=block([n,sum:0,i],
+n:length(L),
+for i:1 thru n do sum:sum+L[i][2]-L[i][1],sum)$
+ 
+TRDQQ(g1,g2,L1,L2):= block([mark:1,dg1,dg2,i,n:length(L1),Ltemp,a,b,ztval,m,f1,f2],
+ztval:first(listofvars(g1)),
+dg1:diff(g1,ztval),
+dg2:diff(g2,ztval),
+for i:1 thru n do (
+    Ltemp:[minmax([L1[i][1],L2[i][1]])[1],minmax([L1[i][2],L2[i][2]])[2]],
+    f1:subst([ztval=ztval+Ltemp[1]],dg1),
+    f2:subst([ztval=ztval+Ltemp[2]],dg1),
+    a:length(TRDrealroot1(poly_primitive_part(f1,[ztval]),nil))-
+            length(TRDrealroot1(poly_primitive_part(f2,[ztval]),nil)),
+    f1:subst([ztval=ztval+Ltemp[1]],dg2),
+    f2:subst([ztval=ztval+Ltemp[2]],dg2),
+    b:length(TRDrealroot1(poly_primitive_part(f1,[ztval]),nil))-
+            length(TRDrealroot1(poly_primitive_part(f2,[ztval]),nil)),
+    m:1/2*Ltemp[1]+1/2*Ltemp[2],
+    if(not(a =0 and b=0 and (mySign(TRDmysubs(dg1,ztval,m))*
+                    mySign(TRDmysubs(dg2,ztval,m))=1))) then mark:0),mark)$
+ 
+TRDQQ(104889/16384-427161/16384*y+133267/4096*y^2-12*y^3,
+839115/131072-53395/2048*y+1066137/32768*y^2-12*y^3,
+[[63/128, 1/2], [91/128, 23/32], [191/128, 3/2]],
+[[1/2, 65/128], [91/128, 23/32], [3/2, 193/128]]);
+ 
+TRDmfindroot(f,ztval,Equations0,varList0,RL0,widthgoal):=
+block([outL:[], Equations:Equations0, varList:varList0, RL:RL0, nv, 
+Rtemp, i, j, itemp, fLtemp,mL1, mL2, Ltemp, n, Ltemp1, breakmarki:1,mybreak:false],
+nv:length(varList),
+if(nv=0) then (
+    Rtemp:TRDinterval_sep1(poly_primitive_part(f,[ztval]),ztval,widthgoal),
+    item:length(Rtemp),
+    outL:flatten(map(lambda([s],[append(RL),s]),Rtemp)),
+    return(outL)),
+itemp:length(RL), 
+for i:1 thru itemp do (
+    if(TRDmsum_width(RL[i])=0 and mybreak=false) then (
+        fLtemp:TRDfBound(f,ztval,varList,RL[i]), 
+        mL1:TRDindexsort(TRDinterval_sep1(poly_primitive_part(fLtemp[1],[ztval]),ztval,1/8*widthgoal),2),
+        n:length(mL1),
+        outL:append(outL,makelist(append(RL[i],[mL1[j]]),j,1,n)),
+        mybreak:true),
+    if(mybreak=false) then (
+    fLtemp:TRDfBound(f,ztval,varList,RL[i]),
+        /*if(mySign(coeff(fLtemp[1],ztval,degree(fLtemp[1])))# dealing with break
+            mySign(coeff(fLtemp[2],ztval,degree(fLtemp[2]))) or
+         mySign(coeff(fLtemp[1],ztval,0))#mySign(coeff(fLtemp[2],ztval,0))) then 
+            RL:substinpart(RL,i,TRDSS(Equations,varList,RL[i],10))*/
+        mL1:TRDindexsort(TRDrealroot1(poly_primitive_part(fLtemp[1],[ztval]),
+         widthgoal/(16^breakmarki)),2),
+        mL2:TRDindexsort(TRDrealroot1(poly_primitive_part(fLtemp[2],[ztval]),
+                    widthgoal/(16^breakmarki)),2),
+        if(length(mL1)=length(mL2) and length(mL1)=0 and mySign(TRDmysubs(fLtemp[1],ztval,1))=
+                          mySign(fLtemp[2],ztval,1)) then 
+  mybreak:true),
+    if(mybreak=false) then (
+  if(length(mL1)=length(mL2) and length(mL1)>0) then (
+            Ltemp:TRDmyunionRoot(mL1,mL2,fLtemp[1],fLtemp[2]),
+            mL1:Ltemp[1],
+            mL2:Ltemp[2],
+            if(TRDQQ(fLtemp[1],fLtemp[2],mL1,mL2)=1) then (
+                n:length(mL1),
+                for j:1 thru n do (
+                    Ltemp:[minmax([mL1[j][1],mL2[j][1]])[1],minmax([mL1[j][2],mL2[j][2]])[2]],
+                    Ltemp1:append(RL[i],Ltemp)),
+            if(widthgoal<Ltemp1[nv+1][2]-Ltemp1[nv+1][1]) then 
+                    Ltemp1:TRDSS(append(Equations,[f]),append(varList,[ztval]),Ltemp1,3)
+            else (outL:append(outL,[Ltemp1]), mybreak:true))),
+    if(mybreak=false) then (
+        RL:substinpart(TRDSS(Equations,varList,RL[i],10),RL,i),
+        breakmarki:breakmarki+1,
+        if(breakmarki=201) then (mybreak:true, outL:[])))),outL)$
+ 
+TRDmfindroot(f,ztval,Equations0,varList0,RL0,widthgoal):=
+block([outL:[], Equations:Equations0, varList:varList0, RL:RL0, nv, 
+Rtemp, i, j, itemp, fLtemp,mL1, mL2, Ltemp, n, Ltemp1, breakmarki:1,cnt:true,i:0],
+nv:length(varList),
+if(nv=0) then (
+    Rtemp:TRDinterval_sep1(poly_primitive_part(f,[ztval]),ztval,widthgoal),
+    item:length(Rtemp),
+    outL:flatten(map(lambda([s],[append(RL),s]),Rtemp)),
+    return(outL)),
+itemp:length(RL), 
+for i:1 thru itemp do (  while(true) do ( 
+    if(TRDmsum_width(RL[i])=0) then (
+        fLtemp:TRDfBound(f,ztval,varList,RL[i]), 
+        mL1:TRDindexsort(TRDinterval_sep1(poly_primitive_part(fLtemp[1],[ztval]),ztval,1/8*widthgoal),2),
+        n:length(mL1),
+       outL:append(outL,makelist(append(RL[i],[mL1[j]]),j,1,n)),return(outL)),
+        fLtemp:TRDfBound(f,ztval,varList,RL[i]), 
+        /*if(mySign(coeff(fLtemp[1],ztval,degree(fLtemp[1])))# dealing with break
+            mySign(coeff(fLtemp[2],ztval,degree(fLtemp[2]))) or
+         mySign(coeff(fLtemp[1],ztval,0))#mySign(coeff(fLtemp[2],ztval,0))) then 
+            RL:substinpart(RL,i,TRDSS(Equations,varList,RL[i],10))*/
+        mL1:TRDindexsort(TRDrealroot1(poly_primitive_part(fLtemp[1],[ztval]),
+                    widthgoal/(16^breakmarki)),2),
+        mL2:TRDindexsort(TRDrealroot1(poly_primitive_part(fLtemp[2],[ztval]),
+                    widthgoal/(16^breakmarki)),2),
+        if(length(mL1)=length(mL2) and length(mL1)=0 and mySign(TRDmysubs(fLtemp[1],ztval,1))=
+                          mySign(fLtemp[2],ztval,1)) then return(outL),
+  if(length(mL1)=length(mL2) and length(mL1)>0) then (  
+            Ltemp:TRDmyunionRoot(mL1,mL2,fLtemp[1],fLtemp[2]),
+            mL1:Ltemp[1],
+            mL2:Ltemp[2],   
+            if(TRDQQ(fLtemp[1],fLtemp[2],mL1,mL2)=1) then ( 
+                n:length(mL1),
+                for j:1 thru n do ( cnt:true,
+                    Ltemp:[minmax([mL1[j][1],mL2[j][1]])[1],minmax([mL1[j][2],mL2[j][2]])[2]],
+            Ltemp1:append(RL[i],[Ltemp]), 
+                    while(cnt) do ( 
+            if(widthgoal<(last(Ltemp1)[2]-last(Ltemp1)[1])) then ( 
+                    Ltemp1:TRDSS(append(Equations,[f]),append(varList,[ztval]),Ltemp1,3))
+            else ( outL:append(outL,[Ltemp1]),cnt:false))),return(outL))),
+ RL:substinpart(TRDSS(Equations,varList,RL[i],10),RL,i),
+       breakmarki:breakmarki+1,
+   if(breakmarki=10) then return([]))),outL)$
+ 
+TRDmfindroot((-2*y^3)+7*y^2+32*x^6*y-64*x^4*y+32*x^2*y-8*y-48*x^6+
+    96*x^4-48*x^2+3,y,[x^4-x^2+1/16],[x],[[[-31/32,-123/128]]],2);
+ 
+TRDmfindroot(8*x^3*y^2+8*x*y^4-20*x^3*y-36*x*y^3+12*x^3-2*x^2*y+52*x*y^2-2*y^3+3*x^2-24*x*y+7*y^2-6*y,
+y,
+[64*x+63],
+[x],
+[[[-63/64, -63/64]]],
+2);
+ 
+TRDinner_isolate_real_zeros(real_point,in_p,R):= block([chk:true,T, L, V, f, g1, g2, ztval, n, 
+fLtemp, rtemp, Ltemp1, outLtemp:[], outLtemp_sum:[], kiteflying, j, Ltemp, Widthgoal:2],
+T:real_point[1],
+L:real_point[2],
+n:length(R),
+ztval:R[n],
+V:part(R,makelist(i,i,1,n-1)),
+f:subst([ztval=-ztval],in_p),
+while(chk) do (
+   fLtemp:TRDfBound(f,ztval,V,L),
+    g1:fLtemp[1],
+    g2:fLtemp[2],
+    if(mySign(coeff(g1,ztval,degree(g1)))#mySign(coeff(g2,ztval,degree(g1)))) then
+        L:TRDSS(T,V,L,8) else chk:false),
+rtemp:minmax([rootbound(fLtemp[1],ztval),rootbound(fLtemp[2],ztval)])[2],
+f:expand(subst([ztval=ztval-rtemp],in_p)),
+Ltemp1:TRDmfindroot(f,ztval,T,V,[L],Widthgoal),
+if(Ltemp1#[]) then (
+    outLtemp:Ltemp1,
+    kiteflying:length(outLtemp),
+    for j:1 thru kiteflying do (  
+        Ltemp:substinpart(append([outLtemp[j][n][1]-rtemp],
+                    [outLtemp[j][n][2]-rtemp]),outLtemp[j],n), 
+        outLtemp:substinpart(Ltemp,outLtemp,j))),outLtemp)$
+ 
+TRDinner_isolate_real_zeros([[64*x+63], [[-63/64, -63/64]]],
+8*x^3*y^2+8*x*y^4-4*x^3*y-4*x*y^3-2*x^2*y-8*x*y^2-2*y^3+x^2+4*x*y+y^2+2*y-1,[x, y]);
+ 
+TRDconvert_cad_sample_to_box(cell_sample):= block([temp,box,vars,i,d,n],
+vars:listofvars(cell_sample),
+n:length(vars),
+box:[reverse(cell_sample[2]),cell_sample[1]],
+d:length(box[1]),
+vars:part(vars,reverse(makelist(i,i,1,n-d+1))),
+box:[map("=",vars,box[1]),box[2]])$
+ 
+TRDconvert_cad_sample_to_box([[[x, 10, 128, 128*x^10-64*x^9-352*x^8+176*x^7+
+ 328*x^6-164*x^5-110*x^4+55*x^3+6*x^2-3*x]],[[-1,-1]]]);
+ 
+TRDisolate_real_zeros(real_point,p_list):=block([mybreak:false,vars, n, p, 
+index_list, interval_list, interval_element, i, inner_real_point,
+         k, rc, mycube, mybox],
+lower_rc:real_point[1],
+lower_cube:real_point[2],
+vars:unique(flatten(map(listofvars,p_list))),
+n:length(vars),
+p:apply("*",p_list),
+p:poly_primitive_part(expand(p),vars),
+index_list:[],
+if(n=1) then (
+    interval_list:TRDinterval_sep(p,vars[1]),
+    if(length(interval_list)#0) then 
+        interval_list:map(lambda([s],[s]),interval_list),
+    if(length(p_list)=1) then 
+        index_list:makelist(i,i,1,length(interval_list)) else (
+    rc:TRDmake_poly(p), 
+    for interval_element in interval_list do ( mybreak:false, 
+        mycube:interval_element,
+        mybox:TRDconvert_cad_sample_to_box([rc,mycube]), 
+        for i:1 thru length(p_list) do ( 
+        if(not mybreak) then (
+            if(TRDsign_at_bwe([[lhs(mybox[1][1]),rhs(mybox[1][1])],[mybox[2]]],p_list[i])=0) then (
+                    index_list:append(index_list,[i]), 
+                    mybreak:true))))),
+    return([interval_list,index_list])),
+inner_real_point:[[lower_rc[4]],lower_cube], 
+interval_list:TRDinner_isolate_real_zeros(inner_real_point,p,vars)
+
+
+)$
+ 
+TRDisolate_real_zeros([[],[]],[x, x-1, x+1, x-1/2, x^2-3/4, x^4-x^2+1/16]);
+ 
+TRDsign_at_bwe([[x,[-0.9659258426235748,-0.9659258424235748]],[[x,10,128,128*x^10-
+64*x^9-352*x^8+176*x^7+328*x^6-164*x^5-110*x^4+55*x^3+6*x^2-3*x]]],x^4-x^2+1/16);
+ 
+TRDisolate_real_zeros([[x, 4, 1, x^4-x^2+1/16],[[-31/32, -123/128]]],
+[y-1/2, x^3-x-1/4*y, x^3-x+1/4*y]);
+ 
+TRDsign_at_bwe([[x , [-31/32, -123/128]], [[x,10,128,128*x^10-64*x^9-352*x^8+176*x^7+328*x^6-164*x^5-110*x^4+
+                55*x^3+6*x^2-3*x]]],x^4-x^2+1/16);
+ 
+mycount(lis):=block([j,s,count], 
+s:makelist(0,i,length(lis)),
+count:makelist(0,i,length(lis)),
+for i:1 thru length(lis) do (
+    j:lis[i], 
+if(count[j]=0) then count[j]:1 else count[j]:count[j]+1, 
+    s[i]:count[j]),s)$
+ 
+mycount([2,3,1,2,3,4,5,4,3]);
+ 
+:lisp(defun $equationp(expr) 
+    (if (equal (car expr) '(mequal simp)) t nil))
+ 
+equationp(s/2+1=a);
+ 
+RootOf_selector(e,indexd):=block([i:false],
+if(equationp(e)) then if(args(e)[1]="index") then i:true,
+if(e#nil and indexd#nil) then indexed:i)$
+ 
+RootOf_selector(index = real[1],nil);
+ 
+RootOf_chkindex(e,n):=if(integerp(e) and (e<1 or n<e)) then []$
+ 
+TRDgenerate_rootof(p,v,k):=block([d,a,b,c,sols,asign],
+d:degree(p),
+if(d=2) then (
+    a:coeff(p,v,2),
+    b:coeff(p,v,1),
+    c:coeff(p,v,0),
+    if(k=1) then (
+        if(listofvars(a)=[]) then asign:mySign(a) 
+        else asign:TRDsign_at_bwe(a,TRDconvert_cad_sample_to_box(cell_sample),poly),
+    if(asign=1) then sols:ratsimp(1/2*(-b-sqrt(b^2-4*a*c))/a)
+    else sols:ratsimp(1/2*(-b+sqrt(b^2-4*a*c))/a)) else (
+        asign:TRDsign_at_bwe(a,TRDconvert_cad_sample_to_box(cell_sample),poly),
+        if(asign=1) then sols:ratsimp(1/2*(-b+sqrt(b^2-4*a*c))/a)
+        else sols := 1/2*(-b-sqrt(b^2-4*a*c))/a),return(sols)),
+allroots(p))$
+ 
+TRDconvert_pwinfo_pwcondition(pw_info):=block([m,v,pw_condition],
+m:length(pw_info), 
+if(m=2) then (
+        v:listofvars(pw_info[1])[1],
+        pw_condition:v=map(rhs,allroots(pw_info[1])))
+else if(m=3) then (
+    v:listofvars(pw_info[2])[1], 
+    pw_condition:if(0<pw_info[1]) then map(rhs,allroots(pw_info[2]))<v
+        else v<map(rhs,allroots(pw_info[2])))
+else if(m=4) then (
+v:listofvars(pw_info[1])[1],
+    pw_condition:[map(rhs,allroots(pw_info[1]))<v,
+             v<map(rhs,allroots(pw_info[3]))]
+    )    
+,pw_condition)$
+ 
+TRDgenerate_stack_general(in_cell,F,vars):=block([i, n, v, interval_pair, sample_rc:[],
+sample_cube:[], cell_sample, cell_index:[], interval_list, index_list, m, 
+list_cell_index, a_1, b_m, s_1, s_last, list_s_odd, list_rc_odd,
+list_cube_odd, list_sample_odd, list_rc_even, list_cube_even, list_sample_even,
+sample_1, list_sample, cell_tree_index:[], list_tree_index:[], list_cell,
+real_cell, tree_index_1, list_tree_index_odd, list_tree_index_even,
+cell_representation:[], count, j, list_pw_info:[], list_pw_info_even:[], 
+list_pw_info_odd:[], list_representation, pw_info_1, pw_info_last, s, box_list],
+n:length(vars),
+v:vars[1],
+if(n=1) then (
+    cell_sample:[sample_rc,sample_cube]) else
+( real_cell:in_cell[1],
+  cell_tree_index:in_cell[2],
+  cell_index:real_cell[1],
+  cell_representation:real_cell[2],
+  cell_sample:real_cell[3],
+  sample_rc:cell_sample[1],
+  sample_cube:cell_sample[2]),
+if(length(F)#0) then interval_pair:TRDisolate_real_zeros(cell_sample,F),
+box_list:interval_pair[1],
+index_list:interval_pair[2],
+m:length(index_list),
+interval_list:map(lambda([s],s[n]),box_list),
+if(2<=n) then (
+    sample_cube:part(box_list[1],makelist(i,i,1,n-1)),
+    cell_sample[2]:sample_cube),
+s: mycount(index_list),    
+pw_info_1:[-1,F[index_list[1]],s[m]],
+pw_info_last:[1,F[index_list[m]],s[m]],
+list_pw_info_even:map(lambda([x,y],[F[x],y]),index_list,s), 
+for i:1 thru m-1 do (
+    list_pw_info_odd:append([append(list_pw_info_even[i],list_pw_info_even[i+1])],list_pw_info_odd)),
+list_pw_info_odd:append(reverse(list_pw_info_odd),[pw_info_last]), 
+for i:1 thru m do ( 
+    list_pw_info:append([list_pw_info_odd[i],list_pw_info_even[i]],list_pw_info)),
+    list_pw_info:reverse(list_pw_info),
+list_pw_info:append([pw_info_1],list_pw_info), 
+list_pw_info:map(lambda([x],TRDconvert_pwinfo_pwcondition(x)),list_pw_info),
+list_representation:map(lambda([x],append(cell_representation,[x])),list_pw_info),
+list_cell_index:makelist(append(cell_index,[i]),i,1,2*m+1),
+tree_index_1:append(cell_tree_index,[length(F)+1]),
+list_tree_index_odd:makelist(tree_index_1,i,1,m),
+list_tree_index_even:makelist(append(cell_tree_index,[index_list[i]]),i,1,m),
+list_tree_index:apply(append,
+        makelist(append([list_tree_index_even[i]],[list_tree_index_odd[i]]),i,1,m)),
+list_tree_index:append([tree_index_1],list_tree_index),
+a_1:interval_list[1][1],
+b_m:interval_list[m][2],
+s_1:floor(a_1-1),
+s_last:ceiling(b_m+1),
+list_s_odd:makelist(1/2*interval_list[i][2]+1/2*interval_list[i+1][1],i,1,m-1),
+list_s_odd:append([s_1],append(list_s_odd,[s_last])), 
+list_rc_odd:makelist(TRDmake_poly(poly_primitive_part(v-list_s_odd[i],listofvars(vars))),i,1,m+1),
+list_cube_odd:makelist(append(sample_cube,[[list_s_odd[i],list_s_odd[i]]]),i,1,m+1),
+list_sample_odd:makelist(append([list_rc_odd[i]],[list_cube_odd[i]]),i,1,m+1),
+list_rc_even:makelist(TRDmake_poly(F[index_list[i]]),i,1,m), 
+list_cube_even:makelist(append(sample_cube,[interval_list[i]]),i,1,m),
+list_sample_even:makelist(append([list_rc_even[i]],[list_cube_even[i]]),i,1,m),
+sample_1:list_sample_odd[1], 
+list_sample_odd:rest(list_sample_odd), 
+list_sample:apply(append,makelist([list_sample_even[i],list_sample_odd[i]],i,1,m)),
+list_sample:append([sample_1],list_sample), 
+list_cell:makelist(append([append([list_cell_index[i]],list_representation[i])],
+[list_sample[i]]),i,1,2*m+1), 
+makelist(append(list_cell[i],[list_tree_index[i]]),i,1,2*m+1)
+)$
+ 
+sejwal:TRDgenerate_stack_general([],[x, x-1, x+1, x-1/2, x^2-3/4, x^4-x^2+1/16],[x]);
+ 
+PCAD_SPtoRootOf(rc,cube):=block([i,dim,eqs:[last(rc)],vars,pt:[]],
+dim:length(cube),
+vars:listofvars(rc[1]),
+for i:1 thru dim do (
+    if(cube[i][1]=cube[i][2]) then 
+        pt:append(pt,vars[i]=cube[i][1])
+    else 
+        pt:append(pt,[vars[i]=[append(map(rhs,allroots(subst(pt,eqs[i]))),cube)]])
+),pt)$
+ 
+PCAD_SPtoRootOf([x,4,1,x^4-x^2+1/16],[[33/128, 67/256]]);
+ 
+PCAD_McCcoeffset(poly,var,lvars):=block([i,crw,deg,cflist:[],tvar,res],
+deg:hipow(poly,var), 
+for i:0 thru deg do cflist:(endcons(ratcoef(poly,var,i),cflist)), 
+cflist:reverse(cflist),
+crw:first(cflist),
+if(constantp(crw)=true) then return([])
+     else if(length(lvars)=1) then return([crw]),
+for i:2 thru length(cflist) do (
+        tvar: first(listofvars(crw)),
+        res:= resultant(crw,part(cflist,i),tvar),
+        if(res=0) then crw:crw
+        else if(constantp(res)) then flatten(cflist)
+        else crw:res),cflist)$
+ 
+PCAD_SFBasis(pols,var):=block([polys,i,j,decomp,head,body,RET:[]], 
+map(lambda([s],( 
+         decomp:sqfr(s), 
+         if(not symbolp(decomp) and s#decomp) then 
+                (  RET:endcons(factors(factor(decomp)),RET)) 
+        else RET:endcons(s,RET))),pols),flatten(RET))$
+ 
+PCAD_SFBasis([x, 2*x-1, x^2-1, 4*x^2-3, 16*x^4-16*x^2+1],y);
+ 
+PCAD_PrimSet(pols,var):=block([s:[],i,polys:pols],
+/*for item in polys do s:endcons(poly_primitive_part(item,[var]),s), print(s),*/
+    s:map(lambda([x],poly_primitive_part(x,[var])),pols),
+    sublist(s,lambda([x],not (constantp(x)))))$
+ 
+PCAD_SetFactors(inpols):=block([temp:[],decomp,S:inpols,F:[],i], 
+for i in S do 
+    ( decomp:factor(i), 
+       if(not symbolp(decomp) and i#decomp) then (
+            if(op(decomp)="^") then decomp:[args(decomp)]
+           else if(op(decomp)="*") then 
+            decomp:[first(args(decomp)),second(args(decomp))]          
+            else decomp, 
+        temp:endcons(decomp,temp)) else temp:endcons(i,temp),
+       decomp: unique(flatten(temp))),decomp)$
+ 
+PCAD_ContSet(pols,var):=block([temp,S,i,polys:pols],
+S:map(lambda([x],first(content(x,var))),polys), 
+(sublist(S,lambda([c],not constantp(c)))))$
+ 
+PCAD_McCcoeffset(y^2+x^2-1,y,[x]);
+ 
+PCAD_MakeInteger(poly):=block([bottom],
+if(polynomialp(poly,listofvars(poly))) then
+  bottom:denom(ratsimp(poly)), 
+if(constantp(bottom)) then return(expand(bottom*poly))
+    else return(poly))$
+ 
+PCAD_MakeMonic(poly,RorVar):=block([temp,i:1,vars,R,pol,po,ssymb],
+    po:RorVar,
+if(constantp(poly)) then return(poly)
+    else ( pol:poly,
+             for i:1 thru length(po) do 
+               ( temp: first(expand(poly)), 
+                 pol:first(sublist(map(rhs,(solve(temp=ssymb*first(po)^hipow(temp,first(po)),ssymb))),lambda([x],x#0))),  
+            if(constantp(pol)) then return(expand(poly/pol)) else return(poly) 
+                 )))$
+ 
+PCAD_RemoveConstantMultiples(pols):=block([polys:(pols),vars,RET],
+if(polys=[]) then return([]),
+vars:listofvars(polys), 
+RET:map(lambda([x],poly_normalize(x,vars)),polys), 
+RET:map(lambda([x],PCAD_MakeInteger(x)),unique(RET)))$
+ 
+PCAD_RemoveConstantMultiples([4-4*x^2,4*x^2-5,4*x^2-3,x^4+x^2-1,-4*x^6+x^4-18*x^2-23]);
+ 
+map(PCAD_MakeInteger,[x^2-1,x^2-5/4,x^2-3/4,x^4+x^2-1,x^6-x^4/4+(9*x^2)/2+23/4]);
+ 
+PCAD_MakeMonic((y+1)*x^3+(z+4)*x+3,[x,y,z]);
+ 
+discrim(p,x):=block([f,d,a,r],
+        f:ratsimp(p),
+        d:hipow(f,x), 
+        if(d=0 or f=0) then return(0),
+        if(d=1) then return(1),
+        a:coeff(expand(f),x,hipow(f,x)),
+        r:sylvesterResultant(f,diff(f,x),x), 
+        d:((-1)^(1/2 * d * (d-1))*r)/a, 
+        ratsimp(d))$
+ 
+PCAD_PrimSet(pols,var):=block([s:[],i,polys:pols],
+    s:map(lambda([x],poly_primitive_part(x,[var])),pols),
+    sublist(s,lambda([x],not (constantp(x)))))$
+ 
+PCAD_McCProjPolys(polyset,vars,SF):=block([i,pset:array(pset,length(vars)-1),ret,cont:array(cont,length(vars)-1),dim],
+if(SF=nil) then SF=true,
+dim:length(vars),
+pset[0]:PCAD_PrimSet(polyset,first(vars)), 
+pset[0]:PCAD_SFBasis(pset[0],first(vars)),  
+pset[0]:PCAD_SetFactors(pset[0]), 
+cont[0]:PCAD_ContSet(polyset,first(vars)), 
+for i:1 thru dim-1 do ( 
+        pset[i]:flatten(unique([cont[0],PCAD_McCallumProj(pset[i-1],part(vars,i), part(vars,unique([i+1,dim])))])), 
+        cont:PCAD_ContSet(pset[i],vars[i+1]), 
+        pset[i]:PCAD_PrimSet(pset[i],vars[i+1]), 
+        if(i=dim-1) then 
+            if(SF=true) then 
+             pset[i]:PCAD_SFBasis(pset[i],vars[i+1])
+        else 
+pset[i]:PCAD_SFBasis(pset[i],vars[i+1]),
+        pset[i]:PCAD_SetFactors(pset[i])), 
+ret:flatten(listarray(pset)), 
+ret:PCAD_RemoveConstantMultiples(ret))$
+ 
+PCAD_McCallumProj(polys,var,lvars):=block([Polys,cont,Pol,clist,Pset1:[],Pset2:[],Pset:[],i,j], 
+Polys:PCAD_PrimSet(polys,var), 
+cont:PCAD_ContSet(polys,var), 
+Polys:PCAD_SFBasis(Polys,var), 
+for i:1 thru length(Polys) do
+     (
+        Pol:part(Polys,i),
+        clist:PCAD_McCcoeffset(Pol,var,[lvars]), 
+        Pset1:flatten(endcons([clist,discrim(Pol,var)],Pset1))
+     ) , Pset1:unique(Pset1),
+for i:1 thru length(Polys) do
+    (
+        for j:i+1 thru length(Polys) do
+         Pset2:endcons(sylvesterResultant(part(Polys,i),part(Polys,j),var),Pset2)
+    ),
+Pset:unique(flatten([cont,Pset1,Pset2])),
+Pset:sublist(Pset,lambda([x],(not (constantp(x))))), 
+Pset:flatten(PCAD_RemoveConstantMultiples(Pset)))$
+ 
+PCAD_McCallumProj([4*x*y-1,4*x*y-16*y-4*x+15,y^2+x^2-1,y^2-2*y+x^2-8*x+16],y,[x]);
+ 
+PCAD_LWRCADtoPWCAD(LCAD):=block([dime, Tree:[], Leaf, i, NumRoots, SubCAD, Rep],
+dime:unique(map(lambda([s],length(s[1])),LCAD)), 
+if(length(dime)=1) then dime:dime[1],
+if(dime=0) then (
+    if(not (length(LCAD) # 1 or LCAD[1][1] # [] or LCAD[1][2] # [])) then (
+        return(LCAD[1][3]))), 
+NumRoots:minmax(map(lambda([x],x[1][1]),LCAD))[2], 
+for i:1 thru NumRoots do (
+    SubCAD:sublist(LCAD,lambda([x],x[1][1]=i)),
+    Rep:map(lambda([s],s[2][1]),SubCAD), 
+    if(length(Rep)=1) then Rep:Rep[1],
+    SubCAD:map(lambda([x],
+    [part(x[1],makelist(i,i,2,dime)),
+    part(x[2],makelist(i,i,2,dime)),x[3]]),SubCAD),
+    Tree:append(Tree,[Rep,PCAD_LWRCADtoPWCAD(SubCAD)])),Tree)$
+ 
+PCAD_LWRCADtoPWCAD(sss);
+ 
+sss:[[[1, 1, 1], [x < -1, y < 1/4/x, z < 0], [regular_chain, [[-2, -2], [-2, -2], [-1, -1]]]], [[1, 1, 2], [x < -1, y < 1/4/x, z = 0], [regular_chain, [[-2, -2], [-2, -2], [0, 0]]]], [[1, 1, 3], [x < -1, y < 1/4/x, 0 < z], [regular_chain, [[-2, -2], [-2, -2], [1, 1]]]], [[1, 2, 1], [x < -1, y = 1/4/x, z < 0], [regular_chain, [[-2, -2], [-1/4, 0], [-1, -1]]]], [[1, 2, 2], [x < -1, y = 1/4/x, z = 0], [regular_chain, [[-2, -2], [-1/4, 0], [0, 0]]]], [[1, 2, 3], [x < -1, y = 1/4/x, 0 < z], [regular_chain, [[-2, -2], [-1/4, 0], [1, 1]]]], [[1, 3, 1], [x < -1, And(1/4/x < y,y < 1/2), z < 0], [regular_chain, [[-2, -2], [1/4, 1/4], [-1, -1]]]], [[1, 3, 2], [x < -1, And(1/4/x < y,y < 1/2), z = 0], [regular_chain, [[-2, -2], [1/4, 1/4], [0, 0]]]], [[1, 3, 3], [x < -1, And(1/4/x < y,y < 1/2), 0 < z], [regular_chain, [[-2, -2], [1/4, 1/4], [1, 1]]]]]$
+ 
+PCAD_IsCellFullDim(cellindex):=block([allodd],
+allodd:unique(map(oddp,cellindex)),
+if(allodd=[true]) then return(true)
+else if(allodd=[false] or sort(allodd)=[true,false]) then return(false))$
+ 
+PCAD_IsCellFullDim([2,3,1,4,5]);
+ 
+PCAD_SortEqsRC(eqs,vars):=block([dime,i,E:make_array(fixnum,length(vars)+1),fi:[]],
+dime:length(vars),
+for i:1 thru length(vars) do 
+    E[i]:sublist(eqs,lambda([x],last(listofvars(x))=vars[i])),
+for i:1 thru dime do fi:append(fi,E[i]),fi)$
+ 
+PCAD_SortEqsRC([x^4-x^2+1/16, 1/4*y+x^3-x],[x,y]);
+ 
